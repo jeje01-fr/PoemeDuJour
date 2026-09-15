@@ -47,10 +47,7 @@ class MainActivity : ComponentActivity() {
             val found = mutableListOf<Poem>()
             val dir = File(filesDir, "pdfs"); dir.mkdirs()
             dir.listFiles()?.filter { it.extension.equals("pdf", true) }?.forEach { file -> found.addAll(parsePdf(file)) }
-            runOnUiThread {
-                poems.clear(); poems.addAll(found)
-                index = prefs().getInt("index", 0).coerceIn(0, maxOf(0, poems.size - 1))
-            }
+            runOnUiThread { poems.clear(); poems.addAll(found); index = prefs().getInt("index", 0).coerceIn(0, maxOf(0, poems.size - 1)) }
         }.start()
     }
 
@@ -60,11 +57,7 @@ class MainActivity : ComponentActivity() {
             PDDocument.load(file).use { doc ->
                 val name = file.nameWithoutExtension
                 for (p in 0 until doc.numberOfPages) {
-                    val text = try {
-                        com.tom_roush.pdfbox.text.PDFTextStripper().apply {
-                            startPage = p + 1; endPage = p + 1
-                        }.getText(doc).trim()
-                    } catch (_: Exception) { "" }
+                    val text = try { com.tom_roush.pdfbox.text.PDFTextStripper().apply { startPage = p + 1; endPage = p + 1 }.getText(doc).trim() } catch (_: Exception) { "" }
                     val lines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
                     if (lines.isEmpty()) continue
                     val title = lines.firstOrNull { it.length in 2..100 && !it.matches(Regex(".*\\d{1,2}.*")) } ?: "Page ${p + 1}"
@@ -79,7 +72,7 @@ class MainActivity : ComponentActivity() {
     private fun importPdf(uri: Uri) {
         if (importing) return
         importing = true
-        importMessage = "Copie du PDF…"
+        importMessage = "Import du PDF…"
         Thread {
             try {
                 val name = (contentResolver.query(uri, null, null, null, null)?.use { c ->
@@ -88,22 +81,18 @@ class MainActivity : ComponentActivity() {
                 } ?: "recueil_${System.currentTimeMillis()}.pdf").replace(Regex("[^A-Za-z0-9._-]"), "_")
                 val dir = File(filesDir, "pdfs"); dir.mkdirs()
                 val out = File(dir, name)
-                runOnUiThread { importMessage = "Analyse du recueil…" }
                 contentResolver.openInputStream(uri)?.use { input -> FileOutputStream(out).use { input.copyTo(it) } }
+                runOnUiThread { importMessage = "Analyse du recueil…" }
                 val found = parsePdf(out)
                 runOnUiThread {
                     poems.removeAll { it.pdfPath == out.absolutePath }
                     poems.addAll(found)
                     index = poems.lastIndex.coerceAtLeast(0)
-                    saveIndex()
-                    importing = false
+                    saveIndex(); importing = false
                     importMessage = if (found.isEmpty()) "Aucun poème détecté dans ce PDF." else "${found.size} poèmes importés."
                 }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    importing = false
-                    importMessage = "Impossible d’importer ce PDF."
-                }
+            } catch (_: Exception) {
+                runOnUiThread { importing = false; importMessage = "Impossible d’importer ce PDF." }
             }
         }.start()
     }
@@ -112,54 +101,32 @@ class MainActivity : ComponentActivity() {
         MaterialTheme {
             Surface(Modifier.fillMaxSize()) {
                 if (showLibrary) LibraryScreen() else HomeScreen()
-                if (importing) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Card {
-                            Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator()
-                                Spacer(Modifier.height(16.dp))
-                                Text(importMessage)
-                                Spacer(Modifier.height(6.dp))
-                                Text("Tu peux attendre ici, l’application travaille en arrière-plan.", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
+                if (importing) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Card { Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(); Spacer(Modifier.height(16.dp)); Text(importMessage); Spacer(Modifier.height(6.dp)); Text("Le traitement continue en arrière-plan.", style = MaterialTheme.typography.bodySmall)
+                    } }
                 }
             }
         }
     }
 
     @Composable fun HomeScreen() {
-        val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { importPdf(it) } }
+        // GetContent is intentional here: on some Android file pickers, OpenDocument opens a full PDF preview instead of returning the selected file.
+        val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { importPdf(it) } }
         val current = poems.getOrNull(if (mode == "Aléatoire" && poems.isNotEmpty()) abs(Calendar.getInstance().get(Calendar.DAY_OF_YEAR) * 31 % poems.size) else index)
         Column(Modifier.fillMaxSize().padding(22.dp)) {
             Text("Poème du Jour", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text(if (poems.isEmpty()) "Ajoute ton premier recueil PDF" else "${current?.collection ?: ""}  •  ${current?.page?.plus(1) ?: 0}", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(6.dp)); Text(if (poems.isEmpty()) "Ajoute ton premier recueil PDF" else "${current?.collection ?: ""}  •  ${current?.page?.plus(1) ?: 0}", style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(24.dp))
             if (current == null) {
-                Button(onClick = { picker.launch(arrayOf("application/pdf")) }) { Text("+ Ajouter un PDF") }
+                Button(onClick = { picker.launch("application/pdf") }) { Text("+ Ajouter un PDF") }
                 Spacer(Modifier.height(12.dp)); Text("Les PDF restent sur le téléphone. L'application fonctionne hors connexion.")
             } else {
-                Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(18.dp))
-                Text(current.text, style = MaterialTheme.typography.bodyLarge)
-                Spacer(Modifier.weight(1f))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    OutlinedButton(onClick = { index = (index - 1 + poems.size) % poems.size; saveIndex() }) { Text("‹ Précédent") }
-                    Button(onClick = { index = (index + 1) % poems.size; saveIndex() }) { Text("Suivant ›") }
-                }
+                Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Spacer(Modifier.height(18.dp)); Text(current.text, style = MaterialTheme.typography.bodyLarge); Spacer(Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { OutlinedButton(onClick = { index = (index - 1 + poems.size) % poems.size; saveIndex() }) { Text("‹ Précédent") }; Button(onClick = { index = (index + 1) % poems.size; saveIndex() }) { Text("Suivant ›") } }
             }
-            Spacer(Modifier.height(12.dp))
-            if (importMessage.isNotEmpty() && !importing) {
-                Text(importMessage, style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(6.dp))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { mode = if (mode == "Jour") "Aléatoire" else "Jour" }) { Text(if (mode == "Jour") "Mode aléatoire" else "Mode ordre") }
-                TextButton(onClick = { showLibrary = true }) { Text("Bibliothèque (${poems.size})") }
-                TextButton(onClick = { picker.launch(arrayOf("application/pdf")) }) { Text("+ PDF") }
-            }
+            Spacer(Modifier.height(12.dp)); if (importMessage.isNotEmpty() && !importing) { Text(importMessage, style = MaterialTheme.typography.bodySmall); Spacer(Modifier.height(6.dp)) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { TextButton(onClick = { mode = if (mode == "Jour") "Aléatoire" else "Jour" }) { Text(if (mode == "Jour") "Mode aléatoire" else "Mode ordre") }; TextButton(onClick = { showLibrary = true }) { Text("Bibliothèque (${poems.size})") }; TextButton(onClick = { picker.launch("application/pdf") }) { Text("+ PDF") } }
         }
     }
 
@@ -167,14 +134,8 @@ class MainActivity : ComponentActivity() {
 
     @Composable fun LibraryScreen() {
         Column(Modifier.fillMaxSize().padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { showLibrary = false }) { Text("‹ Retour") }
-                Text("Bibliothèque", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(10.dp))
-            if (poems.isEmpty()) Text("Aucun poème importé.") else LazyColumn { items(poems) { p ->
-                ListItem(headlineContent = { Text(p.title) }, supportingContent = { Text(p.collection) }, modifier = Modifier.fillMaxWidth())
-            } }
+            Row(verticalAlignment = Alignment.CenterVertically) { TextButton(onClick = { showLibrary = false }) { Text("‹ Retour") }; Text("Bibliothèque", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+            Spacer(Modifier.height(10.dp)); if (poems.isEmpty()) Text("Aucun poème importé.") else LazyColumn { items(poems) { p -> ListItem(headlineContent = { Text(p.title) }, supportingContent = { Text(p.collection) }, modifier = Modifier.fillMaxWidth()) } }
         }
     }
 }
