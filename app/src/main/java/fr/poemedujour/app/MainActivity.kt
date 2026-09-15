@@ -79,6 +79,10 @@ class MainActivity : ComponentActivity() {
                     val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                     if (i >= 0 && c.moveToFirst()) c.getString(i) else null
                 } ?: "recueil_${System.currentTimeMillis()}.pdf").replace(Regex("[^A-Za-z0-9._-]"), "_")
+                if (!name.endsWith(".pdf", true)) {
+                    runOnUiThread { importing = false; importMessage = "Sélectionne un fichier PDF." }
+                    return@Thread
+                }
                 val dir = File(filesDir, "pdfs"); dir.mkdirs()
                 val out = File(dir, name)
                 contentResolver.openInputStream(uri)?.use { input -> FileOutputStream(out).use { input.copyTo(it) } }
@@ -111,7 +115,8 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable fun HomeScreen() {
-        // GetContent is intentional here: on some Android file pickers, OpenDocument opens a full PDF preview instead of returning the selected file.
+        // Use a generic MIME type so Android/file-manager apps do not switch into their PDF preview mode.
+        // The selected item is checked by its filename before importing.
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { importPdf(it) } }
         val current = poems.getOrNull(if (mode == "Aléatoire" && poems.isNotEmpty()) abs(Calendar.getInstance().get(Calendar.DAY_OF_YEAR) * 31 % poems.size) else index)
         Column(Modifier.fillMaxSize().padding(22.dp)) {
@@ -119,14 +124,14 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.height(6.dp)); Text(if (poems.isEmpty()) "Ajoute ton premier recueil PDF" else "${current?.collection ?: ""}  •  ${current?.page?.plus(1) ?: 0}", style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(24.dp))
             if (current == null) {
-                Button(onClick = { picker.launch("application/pdf") }) { Text("+ Ajouter un PDF") }
+                Button(onClick = { picker.launch("*/*") }) { Text("+ Ajouter un PDF") }
                 Spacer(Modifier.height(12.dp)); Text("Les PDF restent sur le téléphone. L'application fonctionne hors connexion.")
             } else {
                 Text(current.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Spacer(Modifier.height(18.dp)); Text(current.text, style = MaterialTheme.typography.bodyLarge); Spacer(Modifier.weight(1f))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { OutlinedButton(onClick = { index = (index - 1 + poems.size) % poems.size; saveIndex() }) { Text("‹ Précédent") }; Button(onClick = { index = (index + 1) % poems.size; saveIndex() }) { Text("Suivant ›") } }
             }
             Spacer(Modifier.height(12.dp)); if (importMessage.isNotEmpty() && !importing) { Text(importMessage, style = MaterialTheme.typography.bodySmall); Spacer(Modifier.height(6.dp)) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { TextButton(onClick = { mode = if (mode == "Jour") "Aléatoire" else "Jour" }) { Text(if (mode == "Jour") "Mode aléatoire" else "Mode ordre") }; TextButton(onClick = { showLibrary = true }) { Text("Bibliothèque (${poems.size})") }; TextButton(onClick = { picker.launch("application/pdf") }) { Text("+ PDF") } }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { TextButton(onClick = { mode = if (mode == "Jour") "Aléatoire" else "Jour" }) { Text(if (mode == "Jour") "Mode aléatoire" else "Mode ordre") }; TextButton(onClick = { showLibrary = true }) { Text("Bibliothèque (${poems.size})") }; TextButton(onClick = { picker.launch("*/*") }) { Text("+ PDF") } }
         }
     }
 
