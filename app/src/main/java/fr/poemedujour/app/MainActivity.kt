@@ -25,9 +25,12 @@ private data class Poem(val id: Long, val collection: String, val title: String,
 
 class MainActivity : ComponentActivity() {
     private val poems = mutableStateListOf<Poem>()
+    private var pendingPoems = mutableStateListOf<Poem>()
+    private var selectedIds = mutableStateOf(setOf<Long>())
     private var mode by mutableStateOf("Jour")
     private var index by mutableIntStateOf(0)
     private var showLibrary by mutableStateOf(false)
+    private var showSelection by mutableStateOf(false)
     private var importing by mutableStateOf(false)
     private var importMessage by mutableStateOf("")
 
@@ -49,7 +52,10 @@ class MainActivity : ComponentActivity() {
             val found = mutableListOf<Poem>()
             val dir = File(filesDir, "pdfs"); dir.mkdirs()
             dir.listFiles()?.filter { it.extension.equals("pdf", true) }?.forEach { found.addAll(parsePdf(it)) }
-            runOnUiThread { poems.clear(); poems.addAll(found); index = prefs().getInt("index", 0).coerceIn(0, maxOf(0, poems.size - 1)) }
+            runOnUiThread {
+                poems.clear(); poems.addAll(found)
+                index = prefs().getInt("index", 0).coerceIn(0, maxOf(0, poems.size - 1))
+            }
         }.start()
     }
 
@@ -59,12 +65,27 @@ class MainActivity : ComponentActivity() {
             PDDocument.load(file).use { doc ->
                 val name = file.nameWithoutExtension
                 for (p in 0 until doc.numberOfPages) {
-                    val text = try { com.tom_roush.pdfbox.text.PDFTextStripper().apply { startPage = p + 1; endPage = p + 1 }.getText(doc).trim() } catch (_: Exception) { "" }
+                    val text = try {
+                        com.tom_roush.pdfbox.text.PDFTextStripper().apply {
+                            startPage = p + 1; endPage = p + 1
+                        }.getText(doc).trim()
+                    } catch (_: Exception) { "" }
                     val lines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
                     if (lines.isEmpty()) continue
                     val title = lines.firstOrNull { it.length in 2..100 && !it.matches(Regex(".*\\d{1,2}.*")) } ?: "Page ${p + 1}"
                     val body = lines.dropWhile { it != title }.drop(1).joinToString("\n")
-                    if (body.length >= 20) result.add(Poem((file.absolutePath + p).hashCode().toLong(), name, title, body, p, file.absolutePath))
+                    if (body.length < 20) continue
+
+                    // Pages that are clearly not poems are excluded before the manual selection screen.
+                    val meta = (title + " " + body.take(500)).lowercase()
+                    val excluded = listOf(
+                        "table des matières", "table des matieres", "sommaire", "contents",
+                        "index", "notes", "note de", "notes de", "commentaires", "commentaire",
+                        "préface", "preface", "introduction", "avant-propos", "avant propos"
+                    ).any { meta.contains(it) }
+                    if (excluded) continue
+
+                    result.add(Poem((file.absolutePath + p).hashCode().toLong(), name, title, body, p, file.absolutePath))
                 }
             }
         } catch (_: Exception) { }
@@ -89,8 +110,11 @@ class MainActivity : ComponentActivity() {
                     all.addAll(parsePdf(out))
                 }
                 runOnUiThread {
-                    poems.clear(); poems.addAll(all); index = poems.lastIndex.coerceAtLeast(0); saveIndex(); importing = false
-                    importMessage = if (all.isEmpty()) "Aucun poème détecté dans ce dossier." else "${all.size} poèmes importés."
+                    importing = false
+                    pendingPoems.clear(); pendingPoems.addAll(all)
+                    selectedIds.value = all.map { it.id }.toSet()
+                    importMessage = if (all.isEmpty()) "Aucun poème détecté dans ce dossier." else "${all.size} poèmes détectés. Vérifie la sélection avant de valider."
+                    showSelection = all.isNotEmpty()
                 }
             } catch (_: Exception) {
                 runOnUiThread { importing = false; importMessage = "Impossible d’importer ce dossier." }
@@ -98,10 +122,25 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
+    private fun validateSelection() {
+        val chosen = pendingPoems.filter { it.id in selectedIds.value }
+        poems.clear(); poems.addAll(chosen)
+        index = 0
+        saveIndex()
+        pendingPoems.clear()
+        selectedIds.value = emptySet()
+        showSelection = false
+        importMessage = "${chosen.size} poèmes sélectionnés."
+    }
+
     @Composable fun App() {
         MaterialTheme {
             Surface(Modifier.fillMaxSize()) {
-                if (showLibrary) LibraryScreen() else HomeScreen()
+                when {
+                    showSelection -> SelectionScreen()
+                    showLibrary -> LibraryScreen()
+                    else -> HomeScreen()
+                }
                 if (importing) AlertDialog(onDismissRequest = {}, title = { Text("Importation") }, text = { Text(importMessage) }, confirmButton = {})
             }
         }
@@ -122,6 +161,36 @@ class MainActivity : ComponentActivity() {
             }
             Spacer(Modifier.height(12.dp)); if (importMessage.isNotEmpty() && !importing) { Text(importMessage, style = MaterialTheme.typography.bodySmall); Spacer(Modifier.height(6.dp)) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { TextButton(onClick = { mode = if (mode == "Jour") "Aléatoire" else "Jour" }) { Text(if (mode == "Jour") "Mode aléatoire" else "Mode ordre") }; TextButton(onClick = { showLibrary = true }) { Text("Bibliothèque (${poems.size})") }; TextButton(onClick = { folderPicker.launch(null) }) { Text("+ PDF") } }
+        }
+    }
+
+    @Composable fun SelectionScreen() {
+        val selected = selectedIds.value
+        Column(Modifier.fillMaxSize().padding(20.dp)) {
+            Text("Sélection des poèmes", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text("${selected.size} / ${pendingPoems.size} sélectionnés")
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = { selectedIds.value = pendingPoems.map { it.id }.toSet() }) { Text("Tout sélectionner") }
+                TextButton(onClick = { selectedIds.value = emptySet() }) { Text("Tout désélectionner") }
+            }
+            Spacer(Modifier.height(4.dp))
+            LazyColumn(Modifier.weight(1f)) {
+                items(pendingPoems) { p ->
+                    val checked = p.id in selected
+                    ListItem(
+                        headlineContent = { Text(p.title) },
+                        supportingContent = { Text("${p.collection} • page ${p.page + 1}") },
+                        leadingContent = { Checkbox(checked = checked, onCheckedChange = { on -> selectedIds.value = if (on) selected + p.id else selected - p.id }) }
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                OutlinedButton(onClick = { pendingPoems.clear(); selectedIds.value = emptySet(); showSelection = false }) { Text("Annuler") }
+                Button(onClick = { validateSelection() }, enabled = selected.isNotEmpty()) { Text("Valider la sélection") }
+            }
         }
     }
 
