@@ -3,6 +3,7 @@ name: Build APK
 on:
   push:
     branches: [ main, fix-selection-poemes ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
