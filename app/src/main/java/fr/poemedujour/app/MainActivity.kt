@@ -27,10 +27,9 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import java.io.File
 import java.io.FileOutputStream
-import java.text.SimpleDateFormat
 import java.util.*
 
-private data class Poem(val id: Long, val collection: String, val title: String, val text: String, val page: Int, val pdfPath: String, val date: String?)
+data class Poem(val id: Long, val collection: String, val title: String, val text: String, val page: Int, val pdfPath: String, val date: String?)
 
 class MainActivity : ComponentActivity() {
     private val poems = mutableStateListOf<Poem>()
@@ -71,7 +70,7 @@ class MainActivity : ComponentActivity() {
 
     private fun extractDate(text: String): String? {
         val numeric = Regex("\\b(\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4})\\b").find(text)?.groupValues?.get(1)
-        if (numeric != null) return numeric.replace('.', '/') .replace('-', '/')
+        if (numeric != null) return numeric.replace('.', '/').replace('-', '/')
         val months = "janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre"
         return Regex("\\b\\d{1,2}\\s+(?:$months)\\s+\\d{4}\\b", RegexOption.IGNORE_CASE).find(text)?.value
     }
@@ -88,7 +87,7 @@ class MainActivity : ComponentActivity() {
                     val lines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
                     if (lines.isEmpty()) continue
                     val title = lines.firstOrNull { it.length in 2..100 && !it.matches(Regex(".*\\d{1,2}.*")) } ?: "Page ${p + 1}"
-                    val body = lines.dropWhile { it != title }.drop(1).joinToString("\\n")
+                    val body = lines.dropWhile { it != title }.drop(1).joinToString("\n")
                     if (body.length < 20) continue
                     val meta = (title + " " + body.take(500)).lowercase()
                     val excluded = listOf("table des matières", "table des matieres", "sommaire", "contents", "index", "notes", "note de", "notes de", "commentaires", "commentaire", "préface", "preface", "introduction", "avant-propos", "avant propos").any { meta.contains(it) }
