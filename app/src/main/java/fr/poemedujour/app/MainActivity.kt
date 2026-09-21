@@ -111,7 +111,7 @@ class MainActivity : ComponentActivity() {
                     } catch (_: Exception) { "" }
                     val lines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
                     if (lines.isEmpty()) continue
-                    val title = lines.firstOrNull { it.length in 2..100 && !it.matches(Regex(".*\\d{1,2}.*")) } ?: "Page §{p + 1}"
+                    val title = lines.firstOrNull { it.length in 2..100 && !it.matches(Regex(".*\\d{1,2}.*")) } ?: "Page ${p + 1}"
                     val body = lines.dropWhile { it != title }.drop(1).joinToString("\n")
                     if (body.length >= 20) result.add(Poem((file.absolutePath + p).hashCode().toLong(), name, title, body, p, file.absolutePath))
                 }
@@ -131,7 +131,7 @@ class MainActivity : ComponentActivity() {
                 val dir = File(filesDir, "pdfs"); dir.mkdirs()
                 val all = mutableListOf<Poem>()
                 pdfs.forEachIndexed { n, docFile ->
-                    runOnUiThread { importMessage = "Import du PDF §{n + 1}/§{pdfs.size}…" }
+                    runOnUiThread { importMessage = "Import du PDF ${n + 1}/${pdfs.size}…" }
                     val safeName = (docFile.name ?: "recueil_$n.pdf").replace(Regex("[^A-Za-z0-9._-]"), "_")
                     val out = File(dir, safeName)
                     contentResolver.openInputStream(docFile.uri)?.use { input -> FileOutputStream(out).use { input.copyTo(it) } }
@@ -140,7 +140,7 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread {
                     poems.clear(); poems.addAll(all); index = poems.lastIndex.coerceAtLeast(0); saveIndex()
                     importing = false
-                    importMessage = if (all.isEmpty()) "Aucun poème détecté dans ce dossier." else "§{all.size} poèmes importés."
+                    importMessage = if (all.isEmpty()) "Aucun poème détecté dans ce dossier." else "${all.size} poèmes importés."
                 }
             } catch (_: Exception) {
                 runOnUiThread { importing = false; importMessage = "Impossible d’importer ce dossier." }
@@ -180,7 +180,7 @@ class MainActivity : ComponentActivity() {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {
                         Text("Poème du Jour", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = bg.content)
-                        if (poems.isNotEmpty()) Text("§{current?.collection ?: ""}  •  §{current?.page?.plus(1) ?: 0}", color = bg.content.copy(alpha = .72f))
+                        if (poems.isNotEmpty()) Text("${current?.collection ?: ""}  •  ${current?.page?.plus(1) ?: 0}", color = bg.content.copy(alpha = .72f))
                     }
                     TextButton(onClick = { showSettings = true }) { Text("⚙", color = bg.content, style = MaterialTheme.typography.titleLarge) }
                 }
@@ -254,7 +254,7 @@ class MainActivity : ComponentActivity() {
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 FilterChip(selected = !showFavoritesOnly, onClick = { showFavoritesOnly = false }, label = { Text("Tous") })
-                FilterChip(selected = showFavoritesOnly, onClick = { showFavoritesOnly = true }, label = { Text("♥ Favoris (§{favorites.size})") })
+                FilterChip(selected = showFavoritesOnly, onClick = { showFavoritesOnly = true }, label = { Text("♥ Favoris (${favorites.size})") })
             }
             Spacer(Modifier.height(8.dp))
             if (list.isEmpty()) {
